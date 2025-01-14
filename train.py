@@ -66,7 +66,7 @@ def main_train(actor, env):
             current_step += 1
 
             rewards.append((sum(reward)/len(reward)).item())
-            actor.add(current_step,state,action,reward,log_prob,value,done.item())
+            actor.add(current_step,state,action,reward,log_prob,value,done.reshape(-1))
 
             Obs_M.add(next_state)
             next_state=Obs_M.get()
@@ -84,9 +84,9 @@ def main_train(actor, env):
                 actor.epoch_train(state,epoch,LR)
                 epoch+=1
                 
-            # if T()-ti > 1/4:
-                # ti = T()
-                # env.render()
+            if T()-ti > 1/4:
+                ti = T()
+                env.render()
         
         distance_list.append(min_distance/init_distance)
         game_round+=1
@@ -136,7 +136,6 @@ if __name__ == '__main__':
         random_package_pos_on_line = False
     )
 
-
     # 批处理接口
     type = None
     args = sys.argv[1:]
@@ -148,23 +147,25 @@ if __name__ == '__main__':
     for opt, arg in opts:
         if opt in ("-n", "--ttpe"):
             type = arg
+
     assert(type!=None)
 
     if type=='1':
         #1
         actor = Centerize_Actor_Critic(lr,n_agents,env)
         torch.cuda.empty_cache()
-        main_train(actor, env)
         print(1)
+        main_train(actor, env)
     elif type=='2':
         #2
         actor = Decenterilzed_Actor_Critic(lr,n_agents,env,use_central_critic=True)
         torch.cuda.empty_cache()
-        main_train(actor, env)
         print(2)
+        main_train(actor, env)
     elif type=='3':
         #3
         actor = Decenterilzed_Actor_Critic(lr,n_agents,env,use_central_critic=False)
         torch.cuda.empty_cache()
-        main_train(actor, env)
         print(3)
+        main_train(actor, env)
+        

@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from config import clip_epsilon, std_penalty_coef, mean_penalty_coef,rep_capacity, max_grad_norm
+from config import clip_epsilon, std_penalty_coef, mean_penalty_coef,rep_capacity, max_grad_norm,use_gae,use_valuenoprm
 
 
 def huber_loss(e, d=10.0):
@@ -14,12 +14,12 @@ def mean_penalty_loss(mu):
 
 
 # 计算优势函数 (GAE)
-def compute_gae(rewards, values, dones, gamma, lambda_):
+def compute_adv(rewards, values, dones, gamma, lambda_):
     gae = 0
     returns = []
     for step in reversed(range(rep_capacity)):
-        delta = rewards[step] + gamma * values[step+1]*(1 - dones[step]) - values[step]
-        gae = delta + gamma * lambda_ * (1 - dones[step]) * gae
+        delta = rewards[step] + gamma * values[step+1]*(1 - dones[step]) - values[step] * use_gae
+        gae = delta + gamma * lambda_ * (1 - dones[step]) * gae * use_gae
         returns.insert(0, gae)
         # print(f'{gae:.2f}',end=',')
     # print()
@@ -55,8 +55,9 @@ def ppo_update(evaluate,policy,critic,optim_policy,optim_critic,sample,Norm_V):
     optim_policy.step()
 
     # 计算Critic损失
-    Norm_V.update(batch_returns)
-    batch_returns = Norm_V.normalize(batch_returns)
+    if use_valuenoprm:
+        Norm_V.update(batch_returns)
+        batch_returns = Norm_V.normalize(batch_returns)
     value_pred_clipped = batch_values + (state_values.squeeze(-1) - batch_values).clamp(-clip_epsilon, clip_epsilon)
     value_pred_original = state_values.squeeze(-1)
     value_loss_clipped = huber_loss(batch_returns - value_pred_clipped)

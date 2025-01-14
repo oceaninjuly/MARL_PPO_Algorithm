@@ -7,7 +7,7 @@ from Buffers import ReplayBuffer
 from Normalize import ValueNorm
 from random import *
 from config import *
-from ppo_algorithms import compute_gae, ppo_update
+from ppo_algorithms import compute_adv, ppo_update
 import numpy as np
 from nn_utils import *
 
@@ -57,9 +57,8 @@ class Centerize_Actor_Critic:
     def add(self,timestep,state,action,reward,log_prob,value,done):
         # 整理
         reward = reward[0]
-        value = value.item()
         action = torch.cat(action,dim=-1)
-        self.Rep.add(state,action,reward,log_prob,value,done)
+        self.Rep.add(state,action,reward,log_prob,value.reshape(-1),done)
 
 
     def critic_forward(self,state):
@@ -69,17 +68,14 @@ class Centerize_Actor_Critic:
     def construct(self,state):
         with torch.no_grad():
             next_value = self.critic(state)
-        states,actions,rewards,log_probs,values,dones = self.Rep.get()
-        rewards=torch.cat(rewards,dim=0)
-        self.states=torch.cat(states,dim=0)
-        self.actions=torch.cat(actions,dim=0)
-        self.log_probs = torch.cat(log_probs,dim=0)
-        self.values = torch.tensor(values, dtype=torch.float32).to(device)
+        self.states,self.actions,rewards,self.log_probs,self.values,dones = self.Rep.get()
         gae_values = torch.cat((self.values,next_value.squeeze(0)),dim=0)
-        gae_values = self.Norm_V.denormalize(gae_values.unsqueeze(-1)).squeeze(-1)
+        if use_valuenoprm:
+            gae_values = self.Norm_V.denormalize(gae_values.unsqueeze(-1)).squeeze(-1)
 
         # 计算优势函数
-        returns = torch.tensor(compute_gae(rewards, gae_values, dones, gamma, lambda_)).to(device)
+        dones = dones.float()
+        returns = torch.tensor(compute_adv(rewards, gae_values, dones, gamma, lambda_)).to(device)
         advantages = returns - gae_values[:-1]
         mean_advantages = torch.mean(advantages)
         std_advantages = torch.std(advantages)
@@ -87,7 +83,7 @@ class Centerize_Actor_Critic:
         advantages = (advantages - mean_advantages) / (std_advantages + 1e-5)
 
         self.returns, self.advantages = returns, advantages
-        self.dones = torch.tensor(dones).float().to(device)
+        self.dones = dones
 
 
     def shuffle(self):
@@ -205,7 +201,7 @@ class Decenterilzed_Actor_Critic:
             self.shared_obs_buffer.add(self.shared_obs)
 
         for i in range(self.n_agents):
-            self.Rep[i].add(state[i],action[i],reward[i],log_prob[i],value[i].item(),done)
+            self.Rep[i].add(state[i],action[i],reward[i],log_prob[i],value[i].reshape(-1),done)
 
 
     def critic_forward(self,state):
@@ -226,15 +222,12 @@ class Decenterilzed_Actor_Critic:
             with torch.no_grad():
                 next_value = self.critic[i](self.shared_obs if self.use_central_critic else state[i])
             states,actions,rewards,log_probs,values,dones = self.Rep[i].get()
-            rewards=torch.cat(rewards,dim=0)
-            states=torch.cat(states,dim=0)
-            actions=torch.cat(actions,dim=0)
-            log_probs = torch.cat(log_probs,dim=0)
-            values = torch.tensor(values, dtype=torch.float32).to(device)
             gae_values = torch.cat((values,next_value.squeeze(0)),dim=0)
-            gae_values = self.Norm_V[i].denormalize(gae_values.unsqueeze(-1)).squeeze(-1)
+            if use_valuenoprm:
+                gae_values = self.Norm_V[i].denormalize(gae_values.unsqueeze(-1)).squeeze(-1)
             # 计算优势函数
-            returns = torch.tensor(compute_gae(rewards, gae_values, dones, gamma, lambda_)).to(device)
+            dones = dones.float()
+            returns = torch.tensor(compute_adv(rewards, gae_values, dones, gamma, lambda_)).to(device)
             advantages = returns - gae_values[:-1]
             mean_advantages = torch.mean(advantages)
             std_advantages = torch.std(advantages)
@@ -246,11 +239,10 @@ class Decenterilzed_Actor_Critic:
             self.actions.append(actions)
             self.log_probs.append(log_probs)
             self.values.append(values)
-        self.dones = torch.tensor(dones).to(device)
+        self.dones = dones
 
         if self.use_central_critic:
-            x = self.shared_obs_buffer.get()[0]
-            self.shared_obs_list = torch.cat(x,dim=0)
+            self.shared_obs_list = self.shared_obs_buffer.get()[0]
     
     def shuffle(self):
         idx = torch.randperm(len(self.states_))

@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from config import device
 
 # 经验回放缓冲区
 class ReplayBuffer:
@@ -7,18 +8,21 @@ class ReplayBuffer:
         self.init_flag = False
         self.capacity = capacity
         self.buffer = []
+        self.counter=0
     
     def add(self,*args):
         if not self.init_flag:
             self.init_flag = True
             for arg in args:
-                self.buffer.append([arg])
+                self.buffer.append(torch.zeros((self.capacity,)+arg.shape[1:],dtype=arg.dtype).to(device))
+                self.buffer[-1][0]=arg[0]
         else:
             for i,arg in enumerate(args):
-                self.buffer[i].append(arg)
+                self.buffer[i][self.counter]=arg[0]
+        self.counter+=1
 
     def __len__(self):
-        return 0 if not self.init_flag else len(self.buffer[0])
+        return 0 if not self.init_flag else self.counter
 
     def get(self):
         return tuple([self.buffer[i] for i in range(len(self.buffer))])
@@ -26,6 +30,7 @@ class ReplayBuffer:
     def clear(self):
         self.buffer = []
         self.init_flag = False
+        self.counter = 0
 
 
 # 帧堆叠管理器

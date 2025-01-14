@@ -21,6 +21,9 @@ mean_penalty_coef = 0.05
 
 max_grad_norm = 10.0
 
+use_valuenoprm = True
+use_gae = True
+
 def update_clip_epsilon():
     global clip_epsilon
     if clip_epsilon > 0.2:
